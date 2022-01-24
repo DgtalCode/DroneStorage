@@ -1,28 +1,49 @@
 import cv2
 import numpy as np
 
+###################### ОБЪЯВЛЕНИЕ ПЕРЕМЕННЫХ ######################
 cap = cv2.VideoCapture(0)
 
+# параметры детектируемых маркеров
 arDict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)
 arPars = cv2.aruco.DetectorParameters_create()
 
+# параметры ПД регулятора для выравниания по маркерам
 k1 = 1
 k2 = 1
 err = 0
 errold = 0
 u = 0
 
-# marker = np.zeros((500,500), dtype=np.uint8)
-# marker = cv2.aruco.drawMarker(arDict, 0, 500, marker, 1)
-# cv2.imwrite('aruco_6x6_250_0.png', marker)
+# ширина и высота изображения
+W, H = (640, 480)
+# флаг необходимости изменять размер изображения под установленный выше
+flag_resize = False
+###################################################################
 
+
+######################## ОБЪЯВЛЕНИЕ ФУНКЦИЙ #######################
 def get_aruco_center(corners):
+    '''
+    Calculates marker center coordinates from its corners
+    :param corners: array with 4 corners
+    :return: array with center coordinates
+    '''
     x = np.sum([ c[0] for c in corners[0] ]) // 4
     y = np.sum([ c[1] for c in corners[0] ]) // 4
     return np.int(x), np.int(y)
+###################################################################
+
+
+############################### MAIN ##############################
+_, frame = cap.read()
+if len(frame) != H:
+    flag_resize = True
 
 while True:
-    ret, frame = cap.read()
+    _, frame = cap.read()
+    if flag_resize:
+        frame = cv2.resize(frame, (640, 480))
 
     (corners, ids, rejected) = cv2.aruco.detectMarkers(frame, arDict, parameters=arPars)
 
