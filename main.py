@@ -9,7 +9,7 @@ from pioneer_sdk import Pioneer
 flag_video_source = 0
 
 if flag_video_source == 1:
-    pioneer = Pioneer(logger=False, bad_connection_exit=False)
+    pioneer = Pioneer(bad_connection_exit=False)
     if pioneer.bad_connection_occured():
         flag_video_source = 0
 
