@@ -6,7 +6,9 @@ from pioneer_sdk import Pioneer
 # выбор источника видео:
 # 0 - камера компьютера
 # 1 - камера квадрокоптера
-flag_video_source = 0
+flag_video_source = 1
+
+flag_new_command = False
 
 if flag_video_source == 1:
     pioneer = Pioneer(bad_connection_exit=False)
@@ -94,17 +96,41 @@ def distance_between_points(point1, point2):
     :return: float: distance between two points
     '''
     return np.sqrt( (point2[0] - point1[0])**2 + (point2[1] - point1[1])**2 )
+
+
+def get_frame():
+    global flag_video_source
+    global frame
+    if flag_video_source == 0:
+        _, frame = cap.read()
+    else:
+        frame = cv2.imdecode(np.frombuffer(pioneer.get_raw_video_frame(), dtype=np.uint8), cv2.IMREAD_COLOR)
+    return frame
+
+
+def nothing(x):
+    pass
 ###################################################################
 
 
 ############################### MAIN ##############################
-_, frame = cap.read()
+frame = get_frame()
 if len(frame) != H:
     flag_resize = True
 
+cv2.namedWindow('Controls')
+roll = cv2.createTrackbar('Roll', 'Controls', 1500, 2000, nothing)
+pitch = cv2.createTrackbar('Pitch', 'Controls', 1500, 2000, nothing)
+throttle = cv2.createTrackbar('Throttle', 'Controls', 1500, 2000, nothing)
+yaw = cv2.createTrackbar('Yaw', 'Controls', 1500, 2000, nothing)
+
+
+# cv2.setTrackbarPos('Roll', 'controls', 1500)
+# cv2.setTrackbarPos('Pitch', 'controls', 1500)
+
 while True:
     # считывание изображения
-    _, frame = cap.read()
+    frame = get_frame()
     if flag_resize:
         frame = cv2.resize(frame, (640, 480))
 
@@ -137,8 +163,59 @@ while True:
 
     cv2.imshow('frame', frame)
 
-    if cv2.waitKey(1) == ord('q'):
+    key = cv2.waitKey(1)
+    if key == ord('t'):
         break
+    if key == ord('g'):
+        cv2.setTrackbarPos('Roll', 'Controls', 1500)
+        cv2.setTrackbarPos('Pitch', 'Controls', 1500)
+        cv2.setTrackbarPos('Throttle', 'Controls', 1500)
+        cv2.setTrackbarPos('Yaw', 'Controls', 1500)
+
+    if flag_video_source == 1:
+        if key == 32:
+            print('space pressed')
+            pioneer.arm()
+            print('point')
+            # pioneer.takeoff()
+        if key == 27:  # esc
+            print('esc pressed')
+            # pioneer.land()
+            pioneer.disarm()
+        if key == ord('w'):
+            print('w pressed')
+            posy += mvxy
+            flag_new_command = True
+        if key == ord('s'):
+            print('s pressed')
+            posy -= mvxy
+            flag_new_command = True
+        if key == ord('d'):
+            print('d pressed')
+            posx += mvxy
+            flag_new_command = True
+        if key == ord('a'):
+            print('a pressed')
+            posx -= mvxy
+            flag_new_command = True
+        if key == ord('h'):
+            print('h pressed')
+            posz += mvz
+            flag_new_command = True
+        if key == ord('l'):
+            print('z pressed')
+            posz -= mvz
+            flag_new_command = True
+
+        ch1 = cv2.getTrackbarPos('Throttle', 'Controls')
+        ch2 = cv2.getTrackbarPos('Yaw', 'Controls')
+        ch3 = cv2.getTrackbarPos('Pitch', 'Controls')
+        ch4 = cv2.getTrackbarPos('Roll', 'Controls')
+        pioneer.send_rc_channels(channel_1=ch1, channel_2=ch2, channel_3=ch3, channel_4=ch4, channel_5=2000, channel_6=1000)
+
+        if flag_new_command:
+            pioneer.go_to_local_point(x=posx, y=posy, z=posz, yaw=yaw)
+            flag_new_command = False
 
 cv2.destroyAllWindows()
 cap.release()
