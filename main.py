@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from pioneer_sdk import Pioneer
+import pygame
 
 ###################### ОБЪЯВЛЕНИЕ ПЕРЕМЕННЫХ ######################
 # выбор источника видео:
@@ -18,28 +19,39 @@ if flag_video_source == 1:
 if flag_video_source == 0:
     cap = cv2.VideoCapture(0)
 
-
 # параметры детектируемых маркеров
-arDict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)     # тип маркера
-arPars = cv2.aruco.DetectorParameters_create()                # параметры детектирования (стандартные)
+arDict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)  # тип маркера
+arPars = cv2.aruco.DetectorParameters_create()  # параметры детектирования (стандартные)
 
 # позиционировнаие коптера
-posx, posy, posz, yaw = 0, 0, 0, 0      # координаты коптера (м)
-mvxy = 0.2                              # шаг перемещений по Х У (м)
-mvz = 0.1                               # шаг перемещений по Z (м)
-mvyaw = np.radians(10)                  # шаг поворота (град)
+posx, posy, posz, yaw = 0, 0, 0, 0  # координаты коптера (м)
+mvxy = 0.2  # шаг перемещений по Х У (м)
+mvz = 0.1  # шаг перемещений по Z (м)
+mvyaw = np.radians(10)  # шаг поворота (град)
 
 # параметры ПД регулятора для выравниания по маркерам
-k1 = 0.0008                             # реакция на отклонение
-k2 = 0.002                              # смягчение резких движений
-err = 0                                 # ошибка (величина отклонения)
-errold = 0                              # старая ошибка (величина отклонения на предыдущей итерации)
-u = 0                                   # управляющее воздействие
+k1 = 0.0008  # реакция на отклонение
+k2 = 0.002  # смягчение резких движений
+err = 0  # ошибка (величина отклонения)
+errold = 0  # старая ошибка (величина отклонения на предыдущей итерации)
+u = 0  # управляющее воздействие
 
 # ширина и высота изображения
 W, H = (640, 480)
 # флаг необходимости изменять размер изображения под установленный выше
 flag_resize = False
+
+control_w = 602
+control_h = 300
+left_stick_pos = ((control_w - 2) // 4, control_h // 2)
+right_stick_pos = ((control_w - 2) // 4, control_h // 2)
+
+pygame.init()
+screen = pygame.display.set_mode((control_w, control_h))
+pygame.display.set_caption('CONTROLS')
+clock = pygame.time.Clock()
+
+
 ###################################################################
 
 
@@ -50,8 +62,8 @@ def get_aruco_center(corners):
     :param corners: array with 4 corners
     :return: array with integer marker center coordinates (x,y)
     '''
-    x = np.sum([ c[0] for c in corners[0] ]) // 4
-    y = np.sum([ c[1] for c in corners[0] ]) // 4
+    x = np.sum([c[0] for c in corners[0]]) // 4
+    y = np.sum([c[1] for c in corners[0]]) // 4
     return int(x), int(y)
 
 
@@ -72,7 +84,7 @@ def vec_length(vec):
     :param vec: vector as an array (x,y)
     :return: float: vector length
     '''
-    return np.sqrt( vec[0]**2 + vec[1]**2 )
+    return np.sqrt(vec[0] ** 2 + vec[1] ** 2)
 
 
 def vec_direction(vec, to_degrees=False):
@@ -95,7 +107,7 @@ def distance_between_points(point1, point2):
     :param point2: array with coordinates (x,y)
     :return: float: distance between two points
     '''
-    return np.sqrt( (point2[0] - point1[0])**2 + (point2[1] - point1[1])**2 )
+    return np.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
 
 
 def get_frame():
@@ -110,6 +122,48 @@ def get_frame():
 
 def nothing(x):
     pass
+
+
+def remap(value, old_min, old_max, new_min, new_max):
+    old_range = (old_max - old_min)
+    new_range = (new_max - new_min)
+    new_value = (((value - old_min) * new_range) / old_range) + new_min
+    return new_value
+
+
+def copter_vector_speed_control(left_vector=[0, 0], right_vector=[0, 0], min_val=-500, max_val=500,
+                                polar=False, degrees=True, rev_left_y=False, rev_left_x=False,
+                                rev_right_y=False, rev_right_x=False):
+    def __s(val):
+        return 1 if val else -1
+
+    if min_val != -500 or max_val != 500 and not polar:
+        right_vector = tuple(map(lambda x: remap(x, min_val, max_val, -500, 500), right_vector))
+        left_vector = tuple(map(lambda x: remap(x, min_val, max_val, -500, 500), left_vector))
+    if polar:
+        if max_val != 500:
+            right_vector = (remap(right_vector[0], 0, max_val, 0, 500), right_vector[1])
+            left_vector = (remap(left_vector[0], 0, max_val, 0, 500), left_vector[1])
+        if degrees:
+            right_vector = (right_vector[0], np.radians(right_vector[1]))
+            left_vector = (left_vector[0], np.radians(left_vector[1]))
+
+        right_vector = (right_vector[0] * np.cos(-right_vector[1]),
+                        right_vector[0] * np.sin(-right_vector[1]))
+        left_vector = (left_vector[0] * np.cos(-left_vector[1]),
+                       left_vector[0] * np.sin(-left_vector[1]))
+
+    channel_1 = round(1500 + left_vector[1] * __s(rev_left_y))
+    channel_2 = round(1500 - left_vector[0] * __s(rev_left_x))
+    channel_3 = round(1500 - right_vector[1] * __s(rev_right_y))
+    channel_4 = round(1500 + right_vector[0] * __s(rev_right_x))
+
+    print(channel_1, channel_2, channel_3, channel_4)
+
+    pioneer.send_rc_channels(channel_1=channel_1, channel_2=channel_2, channel_3=channel_3,
+                             channel_4=channel_4, channel_5=2000, channel_6=1000)
+
+
 ###################################################################
 
 
@@ -118,17 +172,31 @@ frame = get_frame()
 if len(frame) != H:
     flag_resize = True
 
-cv2.namedWindow('Controls')
-roll = cv2.createTrackbar('Roll', 'Controls', 1500, 2000, nothing)
-pitch = cv2.createTrackbar('Pitch', 'Controls', 1500, 2000, nothing)
-throttle = cv2.createTrackbar('Throttle', 'Controls', 1500, 2000, nothing)
-yaw = cv2.createTrackbar('Yaw', 'Controls', 1500, 2000, nothing)
-
-
-# cv2.setTrackbarPos('Roll', 'controls', 1500)
-# cv2.setTrackbarPos('Pitch', 'controls', 1500)
-
 while True:
+
+    screen.fill((255, 255, 255))
+    pygame.draw.line(screen, (0, 0, 0), (control_w // 2, 0), (control_w // 2, control_h), 2)
+
+    for event in pygame.event.get():
+        if event.type == pygame.MOUSEMOTION:
+            if event.buttons == (1, 0, 0):
+                if event.pos[0] < control_w // 2:
+                    left_stick_pos = event.pos
+                    right_stick_pos = ((control_w - 2) // 4, control_h // 2)
+                else:
+                    right_stick_pos = (event.pos[0] - (control_w - 2) // 2, event.pos[1])
+                    left_stick_pos = ((control_w - 2) // 4, control_h // 2)
+            else:
+                left_stick_pos = ((control_w - 2) // 4, control_h // 2)
+                right_stick_pos = ((control_w - 2) // 4, control_h // 2)
+        if event.type == pygame.WINDOWLEAVE:
+            left_stick_pos = ((control_w - 2) // 4, control_h // 2)
+            right_stick_pos = ((control_w - 2) // 4, control_h // 2)
+
+    pygame.draw.circle(screen, (100, 100, 100), left_stick_pos, 20, 20)
+    pygame.draw.circle(screen, (100, 100, 100), (right_stick_pos[0] + (control_w - 2) // 2, right_stick_pos[1]), 20, 20)
+    pygame.display.flip()
+
     # считывание изображения
     frame = get_frame()
     if flag_resize:
@@ -138,12 +206,12 @@ while True:
     (corners, ids, rejected) = cv2.aruco.detectMarkers(frame, arDict, parameters=arPars)
     # отображение маркеров на изображении
     if corners:
-        frame = cv2.aruco.drawDetectedMarkers(frame, corners, ids, (255,0,0))
+        frame = cv2.aruco.drawDetectedMarkers(frame, corners, ids, (255, 0, 0))
 
     if len(corners) == 1:
         # расчет центра маркера
         x, y = get_aruco_center(corners[0])
-        cv2.drawMarker(frame, (x,y), (0,0,255), cv2.MARKER_CROSS)
+        cv2.drawMarker(frame, (x, y), (0, 0, 255), cv2.MARKER_CROSS)
 
         # расчет отклонения маркера от центра изображения в виде вектора
         error_vec = vec_from_points((W // 2, H // 2), (x, y))
@@ -153,7 +221,7 @@ while True:
         # расчет упавляющего воздействия через ПД регулятор
         # для удержания маркера в центре изображения
         err = vec_length(error_vec)
-        u = k1*err - k2*(err-errold)
+        u = k1 * err - k2 * (err - errold)
         errold = err
 
         # расчет коректировчных смещений коптера
@@ -166,56 +234,19 @@ while True:
     key = cv2.waitKey(1)
     if key == ord('t'):
         break
-    if key == ord('g'):
-        cv2.setTrackbarPos('Roll', 'Controls', 1500)
-        cv2.setTrackbarPos('Pitch', 'Controls', 1500)
-        cv2.setTrackbarPos('Throttle', 'Controls', 1500)
-        cv2.setTrackbarPos('Yaw', 'Controls', 1500)
 
     if flag_video_source == 1:
         if key == 32:
             print('space pressed')
             pioneer.arm()
             print('point')
-            # pioneer.takeoff()
         if key == 27:  # esc
             print('esc pressed')
-            # pioneer.land()
             pioneer.disarm()
-        if key == ord('w'):
-            print('w pressed')
-            posy += mvxy
-            flag_new_command = True
-        if key == ord('s'):
-            print('s pressed')
-            posy -= mvxy
-            flag_new_command = True
-        if key == ord('d'):
-            print('d pressed')
-            posx += mvxy
-            flag_new_command = True
-        if key == ord('a'):
-            print('a pressed')
-            posx -= mvxy
-            flag_new_command = True
-        if key == ord('h'):
-            print('h pressed')
-            posz += mvz
-            flag_new_command = True
-        if key == ord('l'):
-            print('z pressed')
-            posz -= mvz
-            flag_new_command = True
 
-        ch1 = cv2.getTrackbarPos('Throttle', 'Controls')
-        ch2 = cv2.getTrackbarPos('Yaw', 'Controls')
-        ch3 = cv2.getTrackbarPos('Pitch', 'Controls')
-        ch4 = cv2.getTrackbarPos('Roll', 'Controls')
-        pioneer.send_rc_channels(channel_1=ch1, channel_2=ch2, channel_3=ch3, channel_4=ch4, channel_5=2000, channel_6=1000)
-
-        if flag_new_command:
-            pioneer.go_to_local_point(x=posx, y=posy, z=posz, yaw=yaw)
-            flag_new_command = False
+        copter_vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
+                                    rev_left_x=True, rev_right_x=True)
+        # copter_vector_speed_control((0, 0), (500, 180), polar=True)
 
 cv2.destroyAllWindows()
 cap.release()
