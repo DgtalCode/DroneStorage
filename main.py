@@ -57,43 +57,43 @@ clock = pygame.time.Clock()
 
 ######################## ОБЪЯВЛЕНИЕ ФУНКЦИЙ #######################
 def get_aruco_center(corners):
-    '''
-    Calculates marker center coordinates from its corners
-    :param corners: array with 4 corners
-    :return: array with integer marker center coordinates (x,y)
-    '''
+    """
+    Считает координаты центра маркера по переданнм четырем углам
+    :param corners: массив с коодинатами углов маркера
+    :return: массив с координатами центра маркера
+    """
     x = np.sum([c[0] for c in corners[0]]) // 4
     y = np.sum([c[1] for c in corners[0]]) // 4
     return int(x), int(y)
 
 
 def vec_from_points(point_start, point_end):
-    '''
-    Creates a vector from two points
-    :param point_start: array with start point coordinates (x,y)
-    :param point_end: array with end point coordinates (x,y)
-    :return: vector as an array (x,y)
-    '''
+    """
+    Создает вектор из двух точек
+    :param point_start: массив с координатами первой точки
+    :param point_end: массив с координатами второй точки
+    :return: вектор в виде массива
+    """
     return (point_end[0] - point_start[0],
             point_start[1] - point_end[1])
 
 
 def vec_length(vec):
-    '''
-    Returns length of a vector
-    :param vec: vector as an array (x,y)
-    :return: float: vector length
-    '''
+    """
+    Возващает длину вектора
+    :param vec: вектор в виде массива
+    :return: длина вектора
+    """
     return np.sqrt(vec[0] ** 2 + vec[1] ** 2)
 
 
 def vec_direction(vec, to_degrees=False):
-    '''
-    Returns an angle between vector and X-axis
-    :param vec: vector as an array (x,y)
-    :param to_degrees: flag that turns the output to degrees instead of radians
-    :return: float: angle between vector and X-axis
-    '''
+    """
+    Возвращает угол между вектором и горизонтальной осью
+    :param vec: вектор в виде массива
+    :param to_degrees: флаг конвертации возвращаемого угла в градусы
+    :return: float: угол между вектором и горизонтальной осью
+    """
     angle = np.arctan2(vec[1], vec[0])
     if to_degrees:
         angle = np.degrees(angle)
@@ -101,16 +101,20 @@ def vec_direction(vec, to_degrees=False):
 
 
 def distance_between_points(point1, point2):
-    '''
-    Returns a distance between two points
-    :param point1: array with coordinates (x,y)
-    :param point2: array with coordinates (x,y)
-    :return: float: distance between two points
-    '''
+    """
+    Возвращает расстояние между двумя точками
+    :param point1: координаты точки 1
+    :param point2: координаты точки 2
+    :return: float: расстояние между точками
+    """
     return np.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
 
 
 def get_frame():
+    """
+    Возвращает opencv фрейм от квадрокоптера или камеры ПК, в зависимоти от используемого источника
+    :return: фрейм
+    """
     global flag_video_source
     global frame
     if flag_video_source == 0:
@@ -125,43 +129,19 @@ def nothing(x):
 
 
 def remap(value, old_min, old_max, new_min, new_max):
+    """
+    Преобразует число из одного диапазона в другой диапазон с сохранением пропорций.
+    :param value: преобразуемое число
+    :param old_min: старый минимум диапазона
+    :param old_max: старый максимум диапазона
+    :param new_min: новый минимум диапазона
+    :param new_max: новый максимум диапазона
+    :return: преобразованное число
+    """
     old_range = (old_max - old_min)
     new_range = (new_max - new_min)
     new_value = (((value - old_min) * new_range) / old_range) + new_min
     return new_value
-
-
-def copter_vector_speed_control(left_vector=[0, 0], right_vector=[0, 0], min_val=-500, max_val=500,
-                                polar=False, degrees=True, rev_left_y=False, rev_left_x=False,
-                                rev_right_y=False, rev_right_x=False):
-    def __s(val):
-        return 1 if val else -1
-
-    if min_val != -500 or max_val != 500 and not polar:
-        right_vector = tuple(map(lambda x: remap(x, min_val, max_val, -500, 500), right_vector))
-        left_vector = tuple(map(lambda x: remap(x, min_val, max_val, -500, 500), left_vector))
-    if polar:
-        if max_val != 500:
-            right_vector = (remap(right_vector[0], 0, max_val, 0, 500), right_vector[1])
-            left_vector = (remap(left_vector[0], 0, max_val, 0, 500), left_vector[1])
-        if degrees:
-            right_vector = (right_vector[0], np.radians(right_vector[1]))
-            left_vector = (left_vector[0], np.radians(left_vector[1]))
-
-        right_vector = (right_vector[0] * np.cos(-right_vector[1]),
-                        right_vector[0] * np.sin(-right_vector[1]))
-        left_vector = (left_vector[0] * np.cos(-left_vector[1]),
-                       left_vector[0] * np.sin(-left_vector[1]))
-
-    channel_1 = round(1500 + left_vector[1] * __s(rev_left_y))
-    channel_2 = round(1500 - left_vector[0] * __s(rev_left_x))
-    channel_3 = round(1500 - right_vector[1] * __s(rev_right_y))
-    channel_4 = round(1500 + right_vector[0] * __s(rev_right_x))
-
-    print(channel_1, channel_2, channel_3, channel_4)
-
-    pioneer.send_rc_channels(channel_1=channel_1, channel_2=channel_2, channel_3=channel_3,
-                             channel_4=channel_4, channel_5=2000, channel_6=1000)
 
 
 ###################################################################
@@ -244,9 +224,8 @@ while True:
             print('esc pressed')
             pioneer.disarm()
 
-        copter_vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
-                                    rev_left_x=True, rev_right_x=True)
-        # copter_vector_speed_control((0, 0), (500, 180), polar=True)
+        pioneer.vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
+                                     rev_left_x=True, rev_right_x=True)
 
 cv2.destroyAllWindows()
 cap.release()
