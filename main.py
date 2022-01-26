@@ -25,13 +25,13 @@ arPars = cv2.aruco.DetectorParameters_create()  # параметры детек�
 
 # позиционировнаие коптера
 posx, posy, posz, yaw = 0, 0, 0, 0  # координаты коптера (м)
-mvxy = 0.2  # шаг перемещений по Х У (м)
-mvz = 0.1  # шаг перемещений по Z (м)
+mvxy = 1.5  # шаг перемещений по Х У (м)
+mvz = 0.2  # шаг перемещений по Z (м)
 mvyaw = np.radians(10)  # шаг поворота (град)
 
 # параметры ПД регулятора для выравниания по маркерам
-k1 = 0.0008  # реакция на отклонение
-k2 = 0.002  # смягчение резких движений
+k1 = 0.2  # реакция на отклонение
+k2 = 0.1  # смягчение резких движений
 err = 0  # ошибка (величина отклонения)
 errold = 0  # старая ошибка (величина отклонения на предыдущей итерации)
 u = 0  # управляющее воздействие
@@ -188,6 +188,7 @@ while True:
     if corners:
         frame = cv2.aruco.drawDetectedMarkers(frame, corners, ids, (255, 0, 0))
 
+    u, err, error_vec_dir = 0, 0, 0
     if len(corners) == 1:
         # расчет центра маркера
         x, y = get_aruco_center(corners[0])
@@ -195,19 +196,17 @@ while True:
 
         # расчет отклонения маркера от центра изображения в виде вектора
         error_vec = vec_from_points((W // 2, H // 2), (x, y))
-        error_vec_dir = vec_direction(error_vec)
+        error_vec_dir = round(vec_direction(error_vec, to_degrees=True))
         cv2.arrowedLine(frame, (W // 2, H // 2), (x, y), (255, 0, 255), 2)
 
         # расчет упавляющего воздействия через ПД регулятор
         # для удержания маркера в центре изображения
         err = vec_length(error_vec)
         u = k1 * err - k2 * (err - errold)
+        u = round(min(u, 100))
         errold = err
 
-        # расчет коректировчных смещений коптера
-        x_correction = round(u * np.cos(error_vec_dir), 2)
-        y_correction = round(u * np.sin(error_vec_dir), 2)
-        print(x_correction, y_correction)
+        print(u, error_vec_dir)
 
     cv2.imshow('frame', frame)
 
@@ -224,8 +223,11 @@ while True:
             print('esc pressed')
             pioneer.disarm()
 
-        pioneer.vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
-                                     rev_left_x=True, rev_right_x=True)
-
+        if sum(left_stick_pos) + sum(right_stick_pos) != 600:
+            pioneer.vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
+                                         rev_left_x=True, rev_right_x=True, use_zy_xr_vectors=True)
+        else:
+            pioneer.vector_speed_control((u, error_vec_dir), (0, 0), min_val=0, max_val=100,
+                                         use_polar=True, use_zy_xr_vectors=True, degrees=True)
 cv2.destroyAllWindows()
 cap.release()
