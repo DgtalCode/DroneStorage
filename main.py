@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from pioneer_sdk import Pioneer
+from pioneer_sdk import pioutils
 import pygame
 
 ###################### ОБЪЯВЛЕНИЕ ПЕРЕМЕННЫХ ######################
@@ -67,49 +68,6 @@ def get_aruco_center(corners):
     return int(x), int(y)
 
 
-def vec_from_points(point_start, point_end):
-    """
-    Создает вектор из двух точек
-    :param point_start: массив с координатами первой точки
-    :param point_end: массив с координатами второй точки
-    :return: вектор в виде массива
-    """
-    return (point_end[0] - point_start[0],
-            point_start[1] - point_end[1])
-
-
-def vec_length(vec):
-    """
-    Возващает длину вектора
-    :param vec: вектор в виде массива
-    :return: длина вектора
-    """
-    return np.sqrt(vec[0] ** 2 + vec[1] ** 2)
-
-
-def vec_direction(vec, to_degrees=False):
-    """
-    Возвращает угол между вектором и горизонтальной осью
-    :param vec: вектор в виде массива
-    :param to_degrees: флаг конвертации возвращаемого угла в градусы
-    :return: float: угол между вектором и горизонтальной осью
-    """
-    angle = np.arctan2(vec[1], vec[0])
-    if to_degrees:
-        angle = np.degrees(angle)
-    return angle
-
-
-def distance_between_points(point1, point2):
-    """
-    Возвращает расстояние между двумя точками
-    :param point1: координаты точки 1
-    :param point2: координаты точки 2
-    :return: float: расстояние между точками
-    """
-    return np.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
-
-
 def get_frame():
     """
     Возвращает opencv фрейм от квадрокоптера или камеры ПК, в зависимоти от используемого источника
@@ -126,23 +84,6 @@ def get_frame():
 
 def nothing(x):
     pass
-
-
-def remap(value, old_min, old_max, new_min, new_max):
-    """
-    Преобразует число из одного диапазона в другой диапазон с сохранением пропорций.
-    :param value: преобразуемое число
-    :param old_min: старый минимум диапазона
-    :param old_max: старый максимум диапазона
-    :param new_min: новый минимум диапазона
-    :param new_max: новый максимум диапазона
-    :return: преобразованное число
-    """
-    old_range = (old_max - old_min)
-    new_range = (new_max - new_min)
-    new_value = (((value - old_min) * new_range) / old_range) + new_min
-    return new_value
-
 
 ###################################################################
 
@@ -195,13 +136,13 @@ while True:
         cv2.drawMarker(frame, (x, y), (0, 0, 255), cv2.MARKER_CROSS)
 
         # расчет отклонения маркера от центра изображения в виде вектора
-        error_vec = vec_from_points((W // 2, H // 2), (x, y))
-        error_vec_dir = round(vec_direction(error_vec, to_degrees=True))
+        error_vec = pioutils.vec_from_points((W // 2, H // 2), (x, y))
+        error_vec_dir = round(pioutils.vec_direction(error_vec, to_degrees=True))
         cv2.arrowedLine(frame, (W // 2, H // 2), (x, y), (255, 0, 255), 2)
 
         # расчет упавляющего воздействия через ПД регулятор
         # для удержания маркера в центре изображения
-        err = vec_length(error_vec)
+        err = pioutils.vec_length(error_vec)
         u = k1 * err - k2 * (err - errold)
         u = round(min(u, 100))
         errold = err
