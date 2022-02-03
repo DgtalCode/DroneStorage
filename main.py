@@ -1,3 +1,5 @@
+import random
+
 import cv2
 import numpy as np
 from pioneer_sdk import Pioneer
@@ -10,7 +12,7 @@ import pygame
 # 1 - камера квадрокоптера
 flag_video_source = 1
 
-flag_new_command = False
+flag_rc_control = False
 
 if flag_video_source == 1:
     pioneer = Pioneer(bad_connection_exit=False)
@@ -21,12 +23,12 @@ if flag_video_source == 0:
     cap = cv2.VideoCapture(0)
 
 # параметры детектируемых маркеров
-arDict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_6X6_250)  # тип маркера
+arDict = cv2.aruco.Dictionary_get(cv2.aruco.DICT_4X4_1000)  # тип маркера
 arPars = cv2.aruco.DetectorParameters_create()  # параметры детектирования (стандартные)
 
 # позиционировнаие коптера
-posx, posy, posz, yaw = 0, 0, 0, 0  # координаты коптера (м)
-mvxy = 1.5  # шаг перемещений по Х У (м)
+posx, posy, posz, yaw = 0, 0, 1.5, 0  # координаты коптера (м)
+mvxy = 0.5  # шаг перемещений по Х У (м)
 mvz = 0.2  # шаг перемещений по Z (м)
 mvyaw = np.radians(10)  # шаг поворота (град)
 
@@ -94,7 +96,6 @@ if len(frame) != H:
     flag_resize = True
 
 while True:
-
     screen.fill((255, 255, 255))
     pygame.draw.line(screen, (0, 0, 0), (control_w // 2, 0), (control_w // 2, control_h), 2)
 
@@ -147,28 +148,43 @@ while True:
         u = round(min(u, 100))
         errold = err
 
-        print(u, error_vec_dir)
-
     cv2.imshow('frame', frame)
 
     key = cv2.waitKey(1)
-    if key == ord('t'):
+    if key == ord('k'):
+        print("k")
         break
 
     if flag_video_source == 1:
         if key == 32:
             print('space pressed')
             pioneer.arm()
-            print('point')
         if key == 27:  # esc
             print('esc pressed')
             pioneer.disarm()
+        if key == ord('g'):
+            print('g pressed')
+            flag_rc_control = not flag_rc_control
+            print(f'Flag now is {flag_rc_control}')
+        if key == ord('r'):
+            pioneer.go_to_local_point(x=round(random.uniform(-1.5, 1.5), 2),
+                                      y=round(random.uniform((-1.5, 1.5)), 2),
+                                      z=round(random.uniform(1.0, 1.5), 2))
 
-        if sum(left_stick_pos) + sum(right_stick_pos) != 600:
-            pioneer.vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
-                                         rev_left_x=True, rev_right_x=True, use_zy_xr_vectors=True)
+        # проверка режима полета: по скоростям или по точкам
+        if flag_rc_control:
+            # если пользователь не перехватывает управление, то позиционируемся по маркерам
+            # в противном случае слушаемся пользователя
+            if sum(left_stick_pos) + sum(right_stick_pos) != 600:
+                pioneer.vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
+                                             rev_left_x=True, rev_right_x=True)
+            else:
+                pioneer.vector_speed_control((u, error_vec_dir), (0, 0), min_val=0, max_val=100,
+                                             use_polar=True, use_zy_xr_vectors=True, degrees=True)
         else:
-            pioneer.vector_speed_control((u, error_vec_dir), (0, 0), min_val=0, max_val=100,
-                                         use_polar=True, use_zy_xr_vectors=True, degrees=True)
+            # важнейший параметр - 6й канал в 2000, так как возвращает коптер в режим полета по точкам
+            pioneer.send_rc_channels(channel_1=1500, channel_2=1500, channel_3=1500,
+                                     channel_4=1500, channel_5=1500, channel_6=2000)
+
 cv2.destroyAllWindows()
 cap.release()
