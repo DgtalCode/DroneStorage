@@ -15,7 +15,7 @@ flag_video_source = 1
 flag_rc_control = False
 
 if flag_video_source == 1:
-    pioneer = Pioneer(bad_connection_exit=False)
+    pioneer = Pioneer(bad_connection_exit=False, heartbeat_logger=True)
     if pioneer.bad_connection_occured():
         flag_video_source = 0
 
@@ -33,10 +33,12 @@ mvz = 0.2  # шаг перемещений по Z (м)
 mvyaw = np.radians(10)  # шаг поворота (град)
 
 # параметры ПД регулятора для выравниания по маркерам
-k1 = 0.2  # реакция на отклонение
-k2 = 0.1  # смягчение резких движений
+k1 = 0.12  # реакция на отклонение
+k2 = 0.09  # смягчение резких движений
+k3 = 0.0004 # реакция на маленькие отклонения (сумму ошибки)
 err = 0  # ошибка (величина отклонения)
 errold = 0  # старая ошибка (величина отклонения на предыдущей итерации)
+errsum = 0 # сумма ошибок
 u = 0  # управляющее воздействие
 
 # ширина и высота изображения
@@ -87,6 +89,7 @@ def get_frame():
 def nothing(x):
     pass
 
+
 ###################################################################
 
 
@@ -94,6 +97,8 @@ def nothing(x):
 frame = get_frame()
 if len(frame) != H:
     flag_resize = True
+
+STEP = 0
 
 while True:
     screen.fill((255, 255, 255))
@@ -124,32 +129,68 @@ while True:
     if flag_resize:
         frame = cv2.resize(frame, (640, 480))
 
-    # детектирование маркеров
-    (corners, ids, rejected) = cv2.aruco.detectMarkers(frame, arDict, parameters=arPars)
-    # отображение маркеров на изображении
-    if corners:
-        frame = cv2.aruco.drawDetectedMarkers(frame, corners, ids, (255, 0, 0))
+    print(pioneer.step_get(), pioneer.get_task_id())
 
-    u, err, error_vec_dir = 0, 0, 0
-    if len(corners) == 1:
-        # расчет центра маркера
-        x, y = get_aruco_center(corners[0])
-        cv2.drawMarker(frame, (x, y), (0, 0, 255), cv2.MARKER_CROSS)
+    if pioneer.step_get() == 0:
+        pioneer.arm()
+        pioneer.takeoff()
+        if pioneer.in_air():    pioneer.step_inc()
 
-        # расчет отклонения маркера от центра изображения в виде вектора
-        error_vec = pioutils.vec_from_points((W // 2, H // 2), (x, y))
-        error_vec_dir = round(pioutils.vec_direction(error_vec, to_degrees=True))
-        cv2.arrowedLine(frame, (W // 2, H // 2), (x, y), (255, 0, 255), 2)
+    if pioneer.step_get() == 1:
+        pioneer.go_to_local_point(0.5, 0, 1.5, callback=pioneer.step_inc)
 
-        # расчет упавляющего воздействия через ПД регулятор
-        # для удержания маркера в центре изображения
-        err = pioutils.vec_length(error_vec)
-        u = k1 * err - k2 * (err - errold)
-        u = round(min(u, 100))
-        errold = err
+    if pioneer.step_get() == 2:
+        pioneer.sleep(1, callback=pioneer.step_inc)
+
+    if pioneer.step_get() == 3:
+        pioneer.go_to_local_point(-0.5, 1, 1, callback=pioneer.step_inc)
+
+    if pioneer.step_get() == 4:
+        pioneer.sleep(1, pioneer.step_inc)
+
+    # if pioneer.step_get() == 2:
+    #     u, err, error_vec_dir = 0, 0, 0
+    #
+    #     # детектирование маркеров
+    #     (corners, ids, rejected) = cv2.aruco.detectMarkers(frame, arDict, parameters=arPars)
+    #     # отображение маркеров на изображении
+    #     if corners:
+    #         frame = cv2.aruco.drawDetectedMarkers(frame, corners, ids, (255, 0, 0))
+    #
+    #     if len(corners) == 1:
+    #         # расчет центра маркера
+    #         x, y = get_aruco_center(corners[0])
+    #         cv2.drawMarker(frame, (x, y), (0, 0, 255), cv2.MARKER_CROSS)
+    #
+    #         # расчет отклонения маркера от центра изображения в виде вектора
+    #         error_vec = pioutils.vec_from_points((W // 2, H // 2), (x, y))
+    #         error_vec_dir = round(pioutils.vec_direction(error_vec, to_degrees=True))
+    #         cv2.arrowedLine(frame, (W // 2, H // 2), (x, y), (255, 0, 255), 2)
+    #
+    #         # расчет упавляющего воздействия через ПД регулятор
+    #         # для удержания маркера в центре изображения
+    #         err = pioutils.vec_length(error_vec)
+    #         errsum += err
+    #         u = k1 * err + k2 * (err - errold) + k3 * errsum
+    #         u = round(min(u, 100))
+    #         errold = err
+    #
+    #         print(err, u)
+    #
+    #         pioneer.vector_speed_control((u, error_vec_dir), (0, 0), min_val=0, max_val=100,
+    #                                      use_polar=True, use_zy_xr_vectors=True, degrees=True)
+    #
+    #         if err < 25:
+    #             pioneer.send_rc_channels(1500, 1500, 1500, 1500, 1500, 2000)
+    #             pioneer.step_inc()
+    #     else:
+    #         pioneer.vector_speed_control((0, 0), (0, 0), min_val=0, max_val=100,
+    #                                      use_polar=True, use_zy_xr_vectors=True, degrees=True)
+
+    if pioneer.step_get() == 5:
+        pioneer.land()
 
     cv2.imshow('frame', frame)
-
     key = cv2.waitKey(1)
     if key == ord('k'):
         print("k")
@@ -159,6 +200,12 @@ while True:
         if key == 32:
             print('space pressed')
             pioneer.arm()
+        if key == ord('t'):
+            print('t pressed')
+            pioneer.takeoff()
+        if key == ord('l'):
+            print('l pressed')
+            pioneer.land()
         if key == 27:  # esc
             print('esc pressed')
             pioneer.disarm()
@@ -167,24 +214,26 @@ while True:
             flag_rc_control = not flag_rc_control
             print(f'Flag now is {flag_rc_control}')
         if key == ord('r'):
+            print('r pressed')
             pioneer.go_to_local_point(x=round(random.uniform(-1.5, 1.5), 2),
-                                      y=round(random.uniform((-1.5, 1.5)), 2),
+                                      y=round(random.uniform(-1.5, 1.5), 2),
                                       z=round(random.uniform(1.0, 1.5), 2))
 
+
         # проверка режима полета: по скоростям или по точкам
-        if flag_rc_control:
-            # если пользователь не перехватывает управление, то позиционируемся по маркерам
-            # в противном случае слушаемся пользователя
-            if sum(left_stick_pos) + sum(right_stick_pos) != 600:
-                pioneer.vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
-                                             rev_left_x=True, rev_right_x=True)
-            else:
-                pioneer.vector_speed_control((u, error_vec_dir), (0, 0), min_val=0, max_val=100,
-                                             use_polar=True, use_zy_xr_vectors=True, degrees=True)
-        else:
-            # важнейший параметр - 6й канал в 2000, так как возвращает коптер в режим полета по точкам
-            pioneer.send_rc_channels(channel_1=1500, channel_2=1500, channel_3=1500,
-                                     channel_4=1500, channel_5=1500, channel_6=2000)
+        # if flag_rc_control:
+        #     # если пользователь не перехватывает управление, то позиционируемся по маркерам
+        #     # в противном случае слушаемся пользователя
+        #     if sum(left_stick_pos) + sum(right_stick_pos) != 600:
+        #         pioneer.vector_speed_control(left_stick_pos, right_stick_pos, min_val=0, max_val=300,
+        #                                      rev_left_x=True, rev_right_x=True)
+        #     else:
+        #         pioneer.vector_speed_control((u, error_vec_dir), (0, 0), min_val=0, max_val=100,
+        #                                      use_polar=True, use_zy_xr_vectors=True, degrees=True)
+        # else:
+        #     # важнейший параметр - 6й канал в 2000, так как возвращает коптер в режим полета по точкам
+        #     pioneer.send_rc_channels(channel_1=1500, channel_2=1500, channel_3=1500,
+        #                              channel_4=1500, channel_5=1500, channel_6=2000)
 
 cv2.destroyAllWindows()
 cap.release()
